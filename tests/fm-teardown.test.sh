@@ -228,10 +228,15 @@ SH
 }
 
 # Run teardown with PATH mocking. Args: case_dir [extra args...]
+# FM_DATA_OVERRIDE keeps fm-unblock.sh (invoked at the end of a non --force
+# teardown) hermetic - without it, DATA would default to the real repo's
+# data/, since only FM_STATE_OVERRIDE is scoped to the case dir here.
 run_teardown() {
   local case_dir=$1; shift
+  mkdir -p "$case_dir/data"
   FM_ROOT_OVERRIDE="$ROOT" \
   FM_STATE_OVERRIDE="$case_dir/state" \
+  FM_DATA_OVERRIDE="$case_dir/data" \
   PATH="$case_dir/fakebin:$PATH" \
     "$TEARDOWN" task-x1 "$@"
 }
@@ -529,8 +534,60 @@ test_local_only_force_overrides_unpushed() {
   pass "local-only worktree with unpushed work is torn down under --force (escape hatch)"
 }
 
+test_unblock_runs_on_normal_teardown() {
+  local case_dir rc
+  case_dir=$(make_case unblock-normal)
+  write_meta "$case_dir" local-only ship
+  wt_commit "$case_dir" "fix the thing"
+  add_fork_with_pushed_branch "$case_dir"
+
+  mkdir -p "$case_dir/data/task-x1" "$case_dir/data/other-x2"
+  printf '%s\n' "# task-x1" "" "## Status" "Ready" "" "## Goal" "Do the thing." \
+    > "$case_dir/data/task-x1/ticket.md"
+  printf '%s\n' "# other-x2" "" "## Status" "Blocked by task-x1: needs task-x1" "" "## Goal" "Depends on task-x1." \
+    > "$case_dir/data/other-x2/ticket.md"
+  printf '%s\n' "## Queued" \
+    "- [ ] other-x2 - depends on task-x1 (repo: x) blocked-by: task-x1 - needs task-x1 [ticket](data/other-x2/ticket.md)" \
+    > "$case_dir/data/backlog.md"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "unblock-normal: teardown should still succeed"
+  assert_absent "$case_dir/data/task-x1/ticket.md" "unblock-normal: task-x1's ticket.md should be deleted"
+  assert_grep "## task-x1" "$case_dir/data/ticket-archive.md" "unblock-normal: task-x1 should be archived"
+  assert_grep "Ready" "$case_dir/data/other-x2/ticket.md" "unblock-normal: other-x2's Status should flip to Ready"
+  assert_no_grep "Blocked by task-x1" "$case_dir/data/other-x2/ticket.md" "unblock-normal: other-x2 should no longer name task-x1 as a blocker"
+  assert_no_grep "blocked-by:" "$case_dir/data/backlog.md" "unblock-normal: backlog blocked-by annotation should be cleared"
+  pass "fm-unblock.sh runs at the end of a normal teardown and clears downstream blocker references"
+}
+
+test_unblock_skipped_under_force() {
+  local case_dir rc
+  case_dir=$(make_case unblock-force)
+  write_meta "$case_dir" local-only ship
+  wt_commit "$case_dir" "unpushed work"
+
+  mkdir -p "$case_dir/data/task-x1"
+  printf '%s\n' "# task-x1" "" "## Status" "Ready" "" "## Goal" "Do the thing." \
+    > "$case_dir/data/task-x1/ticket.md"
+
+  set +e
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "unblock-force: --force teardown should still succeed"
+  assert_present "$case_dir/data/task-x1/ticket.md" "unblock-force: --force discard should NOT run fm-unblock.sh (ticket.md must survive)"
+  pass "fm-unblock.sh is skipped when teardown is invoked with --force"
+}
+
 test_local_only_fork_remote_allows
 test_teardown_prompts_tasks_axi_done_when_compatible
+test_unblock_runs_on_normal_teardown
+test_unblock_skipped_under_force
 test_local_only_truly_unpushed_refuses
 test_local_only_merged_to_local_main_allows
 test_no_mistakes_origin_remote_allows

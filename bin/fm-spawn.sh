@@ -28,8 +28,15 @@
 #                  written by this script; outside the worktree to avoid pi's trust gate)
 # Per-harness turn-end hooks are installed automatically; some live outside the worktree.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> mode=<mode> yolo=<on|off> window=<session:window> worktree=<path>
+#   plus a stderr reminder to arm the watcher (AGENTS.md section 8) - this script cannot
+#   arm it itself, since only the calling harness's own tracked background mechanism keeps
+#   a cycle alive and notifies on wake.
 # mode/yolo are resolved per-project from data/projects.md for ship/scout tasks;
 # secondmate spawns record mode=secondmate, yolo=off, home=, and projects=.
+#   --mode <no-mistakes|direct-PR|local-only> overrides the project's registered mode
+#   for this ticket only (AGENTS.md per-ticket delivery-mode policy, §6); yolo still
+#   comes from the project registry regardless. Must match whatever mode fm-brief.sh
+#   was given for the same task, or the brief's definition-of-done won't match the meta.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,18 +48,33 @@ PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 SUB_HOME_MARKER=".fm-secondmate-home"
 # shellcheck source=bin/fm-ff-lib.sh
 . "$SCRIPT_DIR/fm-ff-lib.sh"
+# shellcheck source=bin/fm-mode-lib.sh
+. "$SCRIPT_DIR/fm-mode-lib.sh"
 # Skip the watcher guard when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD is
 # set by the batch loop below), so the guard runs once for the batch, not once per pair.
 [ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
 KIND=ship
+MODE_OVERRIDE=""
 POS=()
+_next_is_mode=""
 for a in "$@"; do
+  if [ -n "$_next_is_mode" ]; then
+    MODE_OVERRIDE=$a
+    _next_is_mode=""
+    continue
+  fi
   case "$a" in
     --scout) KIND=scout ;;
     --secondmate) KIND=secondmate ;;
+    --mode=*) MODE_OVERRIDE=${a#--mode=} ;;
+    --mode) _next_is_mode=1 ;;
     *) POS+=("$a") ;;
   esac
 done
+if [ -n "$MODE_OVERRIDE" ] && ! fm_valid_mode "$MODE_OVERRIDE"; then
+  echo "error: --mode must be one of no-mistakes|direct-PR|local-only, got \"$MODE_OVERRIDE\"" >&2
+  exit 1
+fi
 
 # Batch dispatch (see header): when the first positional is an `id=repo` pair, treat every
 # positional as one and spawn each by re-execing this script in single-task mode. We use
@@ -74,9 +96,9 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
       rc=2
       continue
     elif [ "$KIND" = scout ]; then
-      if FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair%%=*}" "${pair#*=}" --scout; then :; else echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2; rc=1; fi
+      if FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair%%=*}" "${pair#*=}" --scout ${MODE_OVERRIDE:+--mode "$MODE_OVERRIDE"}; then :; else echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2; rc=1; fi
     else
-      if FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair%%=*}" "${pair#*=}"; then :; else echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2; rc=1; fi
+      if FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair%%=*}" "${pair#*=}" ${MODE_OVERRIDE:+--mode "$MODE_OVERRIDE"}; then :; else echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2; rc=1; fi
     fi
   done
   exit "$rc"
@@ -124,7 +146,7 @@ launch_template() {
     # does NOT suppress the interactive ghost text (verified empirically), so the env
     # var is the correct control. The dim-aware composer reader in fm-tmux-lib.sh is
     # the defense-in-depth backstop for any pane this flag cannot reach.
-    claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions "$(cat __BRIEF__)"' ;;
+    claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude__CLAUDE_FLAGS__ --dangerously-skip-permissions "$(cat __BRIEF__)"' ;;
     codex)
       if [ "$kind" = secondmate ]; then
         printf '%s' 'codex --dangerously-bypass-approvals-and-sandbox "$(cat __BRIEF__)"'
@@ -332,13 +354,17 @@ if [ "$KIND" = secondmate ]; then
     BRIEF="$DATA/$ID/brief.md"
   fi
 else
-  PROJ_ABS="$(cd "$(resolve_project_dir_arg "$PROJ")" && pwd)"
+  PROJ_NAME_LOGICAL="$(basename "$(resolve_project_dir_arg "$PROJ")")"
+  PROJ_ABS="$(cd "$(resolve_project_dir_arg "$PROJ")" && pwd -P)"
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 
 # Same session when firstmate already runs inside tmux; dedicated session otherwise.
+# Gotcha: if that session has a purely numeric name (tmux's default, e.g. "0"),
+# tmux misparses `-t "$SES"` in `new-window` below as a window index and every
+# spawn fails with "create window failed: index N in use". See AGENTS.md #3.
 if [ -n "${TMUX:-}" ]; then
   SES=$(tmux display-message -p '#S')
 else
@@ -459,10 +485,13 @@ if [ "$KIND" = secondmate ]; then
   YOLO=off
   SECONDMATE_PROJECTS=$(secondmate_registry_value "$ID" projects || true)
 else
-  PROJ_NAME=$(basename "$PROJ_ABS")
-  read -r MODE YOLO <<EOF
+  PROJ_NAME="${PROJ_NAME_LOGICAL:-$(basename "$PROJ_ABS")}"
+  read -r REG_MODE YOLO <<EOF
 $("$FM_ROOT/bin/fm-project-mode.sh" "$PROJ_NAME")
 EOF
+  # --mode overrides the project's registered mode for this ticket only (AGENTS.md
+  # per-ticket delivery-mode policy); yolo always stays the project's registered value.
+  MODE="${MODE_OVERRIDE:-$REG_MODE}"
 fi
 
 mkdir -p "$STATE"
@@ -483,6 +512,21 @@ mkdir -p "$STATE"
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")
 sq_piext=$(shell_quote "$STATE/$ID.pi-ext.ts")
+# Resolve per-project or global claude extra flags (e.g. --model override).
+# Check config/crew-claude-flags.<project> first, then config/crew-claude-flags.
+_claude_flags=""
+if [ "$HARNESS" = claude ]; then
+  _flags_file=""
+  if [ -n "${PROJ_NAME:-}" ] && [ -f "$FM_HOME/config/crew-claude-flags.$PROJ_NAME" ]; then
+    _flags_file="$FM_HOME/config/crew-claude-flags.$PROJ_NAME"
+  elif [ -f "$FM_HOME/config/crew-claude-flags" ]; then
+    _flags_file="$FM_HOME/config/crew-claude-flags"
+  fi
+  if [ -n "$_flags_file" ]; then
+    _claude_flags=" $(tr '\n' ' ' < "$_flags_file" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  fi
+fi
+LAUNCH=${LAUNCH//__CLAUDE_FLAGS__/$_claude_flags}
 LAUNCH=${LAUNCH//__BRIEF__/$sq_brief}
 LAUNCH=${LAUNCH//__TURNEND__/$sq_turnend}
 LAUNCH=${LAUNCH//__PIEXT__/$sq_piext}
@@ -495,3 +539,4 @@ sleep 0.3
 tmux send-keys -t "$T" Enter
 
 echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$T worktree=$WT"
+echo "reminder: this task is now in flight with no confirmed live watcher cycle - run bin/fm-watch-arm.sh as its own harness-tracked background task before ending this turn (AGENTS.md section 8)." >&2

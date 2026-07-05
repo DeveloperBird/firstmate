@@ -6,8 +6,13 @@
 # description, acceptance criteria, and context, and may adjust other sections
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> [--scout]
+# Usage: fm-brief.sh <task-id> <repo-name> [--scout] [--mode <no-mistakes|direct-PR|local-only>]
 #        fm-brief.sh <task-id> --secondmate <project>...
+#   --mode overrides the project's registered default mode (data/projects.md) for this
+#   ticket only, per AGENTS.md's per-ticket delivery-mode policy (§6): non-critical
+#   changes with no tests involved may go direct-PR even on a no-mistakes project;
+#   changes with tests that touch core functionality go no-mistakes even on a
+#   direct-PR project. yolo is unaffected - it still comes from the project registry.
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
 #   --secondmate writes a persistent secondmate charter. The project list
@@ -34,19 +39,34 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-marker-lib.sh
 . "$SCRIPT_DIR/fm-marker-lib.sh"
+# shellcheck source=bin/fm-mode-lib.sh
+. "$SCRIPT_DIR/fm-mode-lib.sh"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 KIND=ship
+MODE_OVERRIDE=""
 POS=()
+_next_is_mode=""
 for a in "$@"; do
+  if [ -n "$_next_is_mode" ]; then
+    MODE_OVERRIDE=$a
+    _next_is_mode=""
+    continue
+  fi
   case "$a" in
     --scout) KIND=scout ;;
     --secondmate) KIND=secondmate ;;
+    --mode=*) MODE_OVERRIDE=${a#--mode=} ;;
+    --mode) _next_is_mode=1 ;;
     *) POS+=("$a") ;;
   esac
 done
+if [ -n "$MODE_OVERRIDE" ] && ! fm_valid_mode "$MODE_OVERRIDE"; then
+  echo "error: --mode must be one of no-mistakes|direct-PR|local-only, got \"$MODE_OVERRIDE\"" >&2
+  exit 1
+fi
 ID=${POS[0]}
 
 BRIEF="$DATA/$ID/brief.md"
@@ -167,9 +187,13 @@ fi
 
 # Ship task: shape Setup / Rule 1 / Definition of done by the project's delivery mode.
 # yolo does not affect the brief (it governs firstmate's approval behaviour), so discard it.
-read -r MODE _ <<EOF
+if [ -n "$MODE_OVERRIDE" ]; then
+  MODE=$MODE_OVERRIDE
+else
+  read -r MODE _ <<EOF
 $("$FM_ROOT/bin/fm-project-mode.sh" "$REPO")
 EOF
+fi
 
 case "$MODE" in
   direct-PR)
@@ -204,19 +228,9 @@ EOF
     DOD=$(cat <<EOF
 # Definition of done
 The task is complete only when committed on your branch.
-When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
-
-You drive no-mistakes by responding to its gates, not by implementing fixes.
-Follow no-mistakes' own guidance for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
-Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
-
-Two firstmate-specific rules layer on top of that guidance:
-- ask-user findings are not yours to answer: escalate to firstmate (rule 6) and stop.
-  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
-- Avoid \`--yes\`: the captain, not you, owns the ask-user decisions it would silently auto-resolve.
-
-After /no-mistakes reports CI green, append \`done: PR {url} checks green\` and stop. You are finished.
+When ready, append \`done: {summary}\` and stop — firstmate will send /no-mistakes instructions.
+When running /no-mistakes: respond to its gates (never hand-edit findings yourself); escalate ask-user findings via rule 6 and await the decision before feeding it to \`no-mistakes axi respond\`; avoid \`--yes\`.
+Done line after CI green: \`done: PR {url} checks green\`.
 EOF
 )
     ;;
@@ -259,4 +273,8 @@ Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced 
 
 $DOD
 EOF
-echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"
+if [ -n "$MODE_OVERRIDE" ]; then
+  echo "scaffolded: $BRIEF (ship, mode=$MODE [ticket override]; replace {TASK})"
+else
+  echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"
+fi

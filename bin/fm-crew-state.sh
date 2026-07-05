@@ -253,11 +253,44 @@ nm_run_id_for_branch() {  # <branch> <list-output>
 # scratch worktree); with no branch there is no run to attribute to this crew.
 CREW_BRANCH=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 
+# Cache TTL for no-mistakes axi subprocess calls (configurable; 0 = no cache).
+# Cache is keyed per task, invalidated when the status log is newer than the cache
+# so a crew's phase-change report always yields a fresh run-step read.
+NM_CACHE_TTL=${FM_CREW_STATE_NM_CACHE_TTL:-60}
+_nm_cache_file="$STATE/.nm-cache-${ID}.out"
+_nm_mtime() {
+  if [ "$(uname)" = Darwin ]; then stat -f %m "$1" 2>/dev/null
+  else stat -c %Y "$1" 2>/dev/null; fi
+}
+_nm_cache_valid() {
+  [ "$NM_CACHE_TTL" -gt 0 ] || return 1
+  [ -f "$_nm_cache_file" ] || return 1
+  local now ctime age
+  now=$(date +%s)
+  ctime=$(_nm_mtime "$_nm_cache_file") || return 1
+  age=$(( now - ctime ))
+  [ "$age" -le "$NM_CACHE_TTL" ] || return 1
+  if [ -f "$LOG" ]; then
+    local ltime
+    ltime=$(_nm_mtime "$LOG") || return 0
+    [ "$ltime" -le "$ctime" ] || return 1
+  fi
+}
+_nm_status_cached() {
+  _nm_cache_valid && cat "$_nm_cache_file"
+}
+_nm_status_write() {
+  [ "$NM_CACHE_TTL" -gt 0 ] && printf '%s' "$RUN_OUT" > "$_nm_cache_file" 2>/dev/null || true
+}
+
 HAVE_RUN=0
 # Scouts and secondmates never drive a no-mistakes validation of their own
 # worktree, so skip the lookup for them and read state from pane/log directly.
 if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/null 2>&1; then
-  RUN_OUT=$(nm_run axi status)
+  if ! RUN_OUT=$(_nm_status_cached); then
+    RUN_OUT=$(nm_run axi status)
+    _nm_status_write
+  fi
   run_branch=$(strip_quotes "$(nm_field branch)")
   if [ -n "$run_branch" ] && [ "$run_branch" = "$CREW_BRANCH" ]; then
     HAVE_RUN=1
@@ -267,7 +300,13 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
     list_out=$(nm_run axi)
     rid=$(nm_run_id_for_branch "$CREW_BRANCH" "$list_out")
     if [ -n "$rid" ]; then
-      RUN_OUT=$(nm_run axi status --run "$rid")
+      _nm_rid_cache="$STATE/.nm-cache-${ID}-${rid}.out"
+      if [ -f "$_nm_rid_cache" ] && _nm_cache_valid; then
+        RUN_OUT=$(cat "$_nm_rid_cache")
+      else
+        RUN_OUT=$(nm_run axi status --run "$rid")
+        [ "$NM_CACHE_TTL" -gt 0 ] && printf '%s' "$RUN_OUT" > "$_nm_rid_cache" 2>/dev/null || true
+      fi
       run_branch=$(strip_quotes "$(nm_field branch)")
       [ "$run_branch" = "$CREW_BRANCH" ] && HAVE_RUN=1
     fi

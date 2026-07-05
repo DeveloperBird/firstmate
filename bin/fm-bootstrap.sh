@@ -134,12 +134,12 @@ install_cmd() {
     tmux|node|gh|curl|jq) echo "brew install $1  # or the platform's package manager" ;;
     treehouse) echo "curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh" ;;
     no-mistakes) echo "curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh" ;;
-    gh-axi|chrome-devtools-axi|lavish-axi) echo "npm install -g $1 && $1 setup hooks" ;;
+    gh-axi|chrome-devtools-axi) echo "npm install -g $1 && $1 setup hooks" ;;
     *) return 1 ;;
   esac
 }
 
-TOOLS="tmux node gh treehouse no-mistakes gh-axi chrome-devtools-axi lavish-axi"
+TOOLS="tmux node gh treehouse no-mistakes gh-axi chrome-devtools-axi"
 NO_MISTAKES_MIN_MAJOR=1
 NO_MISTAKES_MIN_MINOR=31
 NO_MISTAKES_MIN_PATCH=2

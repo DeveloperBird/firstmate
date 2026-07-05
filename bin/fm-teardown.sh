@@ -581,8 +581,22 @@ if [ "$KIND" = secondmate ]; then
   remove_secondmate_registry_entry "$ID"
 fi
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts"
+# Sweep the watcher's per-task internals (bin/fm-watch.sh, bin/fm-crew-state.sh): these
+# are keyed off the task id and/or the window target and otherwise accumulate forever,
+# since nothing else ever removes them once the task's .meta/.status are gone.
+_watch_key=$(printf '%s' "$T" | tr ':/.' '___')
+_id_key=$(printf '%s' "$ID" | tr ':/.' '___')
+rm -f "$STATE/.hash-$_watch_key" "$STATE/.count-$_watch_key" "$STATE/.stale-$_watch_key" "$STATE/.stale-since-$_watch_key"
+rm -f "$STATE/.seen-${ID}_status" "$STATE/.seen-${ID}_turn-ended"
+rm -f "$STATE/.hb-surfaced-$_id_key"
+rm -f "$STATE"/.nm-cache-"$ID".out "$STATE"/.nm-cache-"$ID"-*.out
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
+fi
+# --force means the captain chose to discard unlanded work, not that it
+# legitimately completed - never propagate a discard as if it were a finish.
+if [ "$FORCE" != "--force" ]; then
+  "$FM_ROOT/bin/fm-unblock.sh" "$ID" || true
 fi
 echo "teardown $ID complete (window $T, worktree $WT)"
 backlog_refresh_reminder
