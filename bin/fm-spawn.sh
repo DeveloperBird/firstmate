@@ -74,8 +74,15 @@
 # grok uses a firstmate-owned global hook under ${GROK_HOME:-$HOME/.grok}/hooks
 # plus a gitignored .fm-grok-turnend worktree pointer and a state token.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> mode=<mode> yolo=<on|off> window=<backend-target> worktree=<path>
+#   plus a stderr reminder to arm the watcher (AGENTS.md section 8) - this script cannot
+#   arm it itself, since only the calling harness's own tracked background mechanism keeps
+#   a cycle alive and notifies on wake.
 # mode/yolo are resolved per-project from data/projects.md for ship/scout tasks;
 # secondmate spawns record mode=secondmate, yolo=off, home=, and projects=.
+#   --mode <no-mistakes|direct-PR|local-only> overrides the project's registered mode
+#   for this ticket only (AGENTS.md per-ticket delivery-mode policy, §6); yolo still
+#   comes from the project registry regardless. Must match whatever mode fm-brief.sh
+#   was given for the same task, or the brief's definition-of-done won't match the meta.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -88,6 +95,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 SUB_HOME_MARKER=".fm-secondmate-home"
 # shellcheck source=bin/fm-ff-lib.sh
 . "$SCRIPT_DIR/fm-ff-lib.sh"
+# shellcheck source=bin/fm-mode-lib.sh
+. "$SCRIPT_DIR/fm-mode-lib.sh"
 # shellcheck source=bin/fm-config-inherit-lib.sh
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
 # shellcheck source=bin/fm-backend.sh
@@ -96,6 +105,7 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 # set by the batch loop below), so the guard runs once for the batch, not once per pair.
 [ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
 KIND=ship
+MODE_OVERRIDE=""
 HARNESS_ARG=
 MODEL=
 EFFORT=
@@ -116,6 +126,7 @@ for a in "$@"; do
       model) MODEL=$a; MODEL_SET=1 ;;
       effort) EFFORT=$a; EFFORT_SET=1 ;;
       backend) BACKEND_ARG=$a; BACKEND_SET=1 ;;
+      mode) MODE_OVERRIDE=$a ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -124,6 +135,8 @@ for a in "$@"; do
   case "$a" in
     --scout) KIND=scout ;;
     --secondmate) KIND=secondmate ;;
+    --mode=*) MODE_OVERRIDE=${a#--mode=} ;;
+    --mode) want_value=mode ;;
     --harness) want_value=harness ;;
     --harness=*) HARNESS_ARG=${a#--harness=}; HARNESS_SET=1 ;;
     --model) want_value=model ;;
@@ -140,6 +153,10 @@ done
 [ "$MODEL_SET" -eq 0 ] || [ -n "$MODEL" ] || { echo "error: --model requires a non-empty value" >&2; exit 1; }
 [ "$EFFORT_SET" -eq 0 ] || [ -n "$EFFORT" ] || { echo "error: --effort requires a non-empty value" >&2; exit 1; }
 [ "$BACKEND_SET" -eq 0 ] || [ -n "$BACKEND_ARG" ] || { echo "error: --backend requires a non-empty value" >&2; exit 1; }
+if [ -n "$MODE_OVERRIDE" ] && ! fm_valid_mode "$MODE_OVERRIDE"; then
+  echo "error: --mode must be one of no-mistakes|direct-PR|local-only, got \"$MODE_OVERRIDE\"" >&2
+  exit 1
+fi
 case "$EFFORT" in
   ''|low|medium|high|xhigh|max) ;;
   *) echo "error: --effort must be one of low, medium, high, xhigh, max" >&2; exit 1 ;;
@@ -243,6 +260,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   [ -z "$MODEL" ] || shared_args+=(--model "$MODEL")
   [ -z "$EFFORT" ] || shared_args+=(--effort "$EFFORT")
   [ -z "$BACKEND_ARG" ] || shared_args+=(--backend "$BACKEND_ARG")
+  [ -z "$MODE_OVERRIDE" ] || shared_args+=(--mode "$MODE_OVERRIDE")
   for pair in "${POS[@]}"; do
     case "$pair" in
       *=*) : ;;
@@ -621,7 +639,8 @@ if [ "$KIND" = secondmate ]; then
     BRIEF="$DATA/$ID/brief.md"
   fi
 else
-  PROJ_ABS="$(cd "$(resolve_project_dir_arg "$PROJ")" && pwd)"
+  PROJ_NAME_LOGICAL="$(basename "$(resolve_project_dir_arg "$PROJ")")"
+  PROJ_ABS="$(cd "$(resolve_project_dir_arg "$PROJ")" && pwd -P)"
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
@@ -926,10 +945,13 @@ if [ "$KIND" = secondmate ]; then
   YOLO=off
   SECONDMATE_PROJECTS=$(secondmate_registry_value "$ID" projects || true)
 else
-  PROJ_NAME=$(basename "$PROJ_ABS")
-  read -r MODE YOLO <<EOF
+  PROJ_NAME="${PROJ_NAME_LOGICAL:-$(basename "$PROJ_ABS")}"
+  read -r REG_MODE YOLO <<EOF
 $("$FM_ROOT/bin/fm-project-mode.sh" "$PROJ_NAME")
 EOF
+  # --mode overrides the project's registered mode for this ticket only (AGENTS.md
+  # per-ticket delivery-mode policy); yolo always stays the project's registered value.
+  MODE="${MODE_OVERRIDE:-$REG_MODE}"
 fi
 
 META_WINDOW=$T
@@ -999,3 +1021,4 @@ sleep 0.3
 spawn_send_key "$T" Enter
 
 echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$META_WINDOW worktree=$WT"
+echo "reminder: this task is now in flight with no confirmed live watcher cycle - run bin/fm-watch-arm.sh as its own harness-tracked background task before ending this turn (AGENTS.md section 8)." >&2

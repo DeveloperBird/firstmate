@@ -22,6 +22,8 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-mode-lib.sh
+. "$SCRIPT_DIR/fm-mode-lib.sh"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
@@ -58,9 +60,9 @@ fi
 
 mode=${parsed%% *}
 yolo=${parsed##* }
-case "$mode" in
-  no-mistakes|direct-PR|local-only) ;;
-  *) echo "warn: unknown mode \"$mode\" for $NAME; defaulting to no-mistakes off" >&2; mode=no-mistakes; yolo=off ;;
-esac
+if ! fm_valid_mode "$mode"; then
+  echo "warn: unknown mode \"$mode\" for $NAME; defaulting to no-mistakes off" >&2
+  mode=no-mistakes; yolo=off
+fi
 case "$yolo" in on|off) ;; *) yolo=off ;; esac
 echo "$mode $yolo"

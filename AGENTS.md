@@ -86,6 +86,7 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   learnings.md       fleet-local operational facts and gotchas; LOCAL, gitignored; dated, evidence-backed, curated - rewrite and prune rather than append forever, the same contract as captain.md; created lazily, absent until this home has a learning to store
   projects.md        thin fleet navigation registry; firstmate-private, parsed by fm-project-mode.sh (section 6)
   secondmates.md      secondmate routing table; firstmate-private, maintained by fm-home-seed.sh (section 6)
+  <id>/ticket.md     task requirements and acceptance criteria; written by grill session; archived to data/ticket-archive.md and deleted at ship teardown (section 7)
   <id>/brief.md      per-task crewmate brief, or per-secondmate charter brief when kind=secondmate
   <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
 projects/            cloned repos; gitignored; READ-ONLY for you
@@ -102,7 +103,7 @@ state/               volatile runtime signals; gitignored
   .wake-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
   .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
   .watch.lock .wake-queue.lock watcher singleton and queue serialization locks
-  .hash-* .count-* .stale-* .stale-since-* .seen-* .hb-surfaced-* .last-* .heartbeat-streak   watcher internals; never touch
+  .hash-* .count-* .stale-* .stale-since-* .seen-* .hb-surfaced-* .last-* .heartbeat-streak .nm-cache-*   watcher internals; never touch
   .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
@@ -309,6 +310,8 @@ All truth lives in each task's backend live-task inventory (tmux by hard default
 
 ## 6. Project management
 
+All projects are Unity game projects. Use Unity Editor CLI (`-batchmode -nographics -runTests -testPlatform EditMode|PlayMode -buildTarget <target>`) — never open Unity GUI from a script. Unity version pinned in `ProjectSettings/ProjectVersion.txt`. Package dependencies in `Packages/manifest.json` via Unity Package Manager — never hand-edit `packages-lock.json`. C# is the project language; `dotnet` is for formatting (`dotnet format`) and static analysis only.
+
 All projects live flat under `projects/`.
 
 `data/projects.md` is firstmate's thin navigation registry.
@@ -370,6 +373,11 @@ Create a project's `AGENTS.md` lazily on first need.
 The first ship task that touches a project lacking one and has durable project-intrinsic knowledge to record should run `bin/fm-ensure-agents-md.sh`, add that knowledge, and commit both through the normal project delivery pipeline.
 Do not eagerly backfill every project.
 
+**Per-project design documents**: some projects have an AI-optimized design doc under `data/` merging game/product design, ADRs, and glossary — read it before dispatching or briefing work on that project, and keep it in sync (don't just append) when a shipped task changes design, architecture, or known bugs.
+- `project-crawler` → `data/project-crawler-design.md`
+
+Whenever a `data/<id>/ticket.md` is written (grill session or otherwise) for a project that has one of these design documents, fold the ticket's design decisions into that project's design doc in the same turn — merge into the relevant existing section (or add a new one) rather than a raw append, since `ticket.md` is deleted at ship teardown and the design doc is the only place that knowledge survives afterward. Superseded/contradicted decisions get corrected in place, not left stale alongside the new ones.
+
 ### Knowledge routing
 
 Route each piece of durable knowledge to its most specific home:
@@ -393,6 +401,14 @@ It sweeps the current session for uncaptured durable knowledge, routes findings 
 - `local-only` - local branch, no remote, no PR; firstmate reviews the diff, the captain approves, firstmate merges to local `main` (section 7).
 
 Orthogonal to mode is an optional `+yolo` flag (`[direct-PR +yolo]`), default off and **not recommended**: with `yolo` on, firstmate makes the approval decisions itself instead of asking the captain (section 7). When the captain adds a project without saying, default to `no-mistakes` with yolo off; only set a faster mode or `+yolo` on the captain's explicit say-so.
+
+**Per-ticket mode override**: the project's registered mode is the default, but each ticket's own risk shape can override it for that ticket only:
+
+- No tests involved and non-critical (cosmetic, docs, tooling, low-risk isolated change) → `direct-PR`, even on a `no-mistakes` project
+- Tests involved and touches core functionality (data models, gameplay systems, save/persistence, anything acceptance criteria call out a test for) → `no-mistakes`, even on a `direct-PR` project
+- Anything else → fall back to the project's registered default mode
+
+Decide this when writing the ticket (grill session or otherwise) and record it as a `## Delivery Mode` line in `data/<id>/ticket.md` (mode + one-line reason), so the decision survives independent of who dispatches it later. Pass it through at brief/spawn time: `bin/fm-brief.sh <id> <repo> --mode <mode>` and `bin/fm-spawn.sh <id> projects/<repo> --mode <mode>` — both must get the same override, or the brief's definition-of-done won't match the task meta. Omit `--mode` to use the project's registered default. yolo is unaffected by this override; it always comes from the project registry.
 
 **Clone existing:** `git clone <url> projects/<name>`, add its registry line with the chosen mode, then initialize only if the mode is `no-mistakes`.
 
@@ -476,6 +492,7 @@ bin/fm-spawn.sh <id> projects/<repo> --backend zellij # experimental zellij back
 bin/fm-spawn.sh <id> projects/<repo> --backend orca   # experimental Orca backend (docs/orca-backend.md); Orca owns worktree + terminal; Escape unsupported
 bin/fm-spawn.sh <id> projects/<repo> --backend cmux   # experimental cmux backend (docs/cmux-backend.md); GUI-first macOS-only, treehouse still owns worktree; requires a one-time socket-access setup (docs/cmux-backend.md "Setup")
 bin/fm-spawn.sh <id> projects/<repo> --scout     # scout task; records kind=scout in meta
+bin/fm-spawn.sh <id> projects/<repo> --mode direct-PR   # per-ticket delivery-mode override (section 6); must match the same --mode passed to fm-brief.sh
 bin/fm-spawn.sh <id> --secondmate                 # launch a registered persistent secondmate in its home
 bin/fm-spawn.sh <id> <firstmate-home> --secondmate   # launch or recover an explicit secondmate home
 bin/fm-spawn.sh <id1>=projects/<repo1> <id2>=projects/<repo2> [--scout]   # batch: one call, several tasks
@@ -485,7 +502,7 @@ Dispatch several tasks in one call by passing `id=repo` pairs instead of a singl
 If one pair fails, the rest still run and the batch exits non-zero.
 When `config/crew-dispatch.json` exists, include a shared `--harness` for every crewmate or scout batch after consulting the dispatch rules.
 
-The script resolves the harness (`fm-harness.sh crew` for crewmate/scout tasks only when `config/crew-dispatch.json` is absent, `fm-harness.sh secondmate` for `kind=secondmate`; section 4), resolves the runtime backend (`--backend`, then `FM_BACKEND`, then `config/backend`, then runtime auto-detection - the runtime firstmate itself is executing inside, from `$TMUX`/`HERDR_ENV=1`/cmux runtime signals, nesting resolved innermost-first (`$TMUX`, then `HERDR_ENV=1`, then cmux's primary `CMUX_WORKSPACE_ID` marker and documented macOS-only fallbacks last, since cmux is a terminal application rather than a nestable multiplexer; docs/cmux-backend.md "Runtime auto-detection") - then `tmux`; an auto-detected herdr or cmux spawn prints a loud stderr notice, auto-detected tmux stays silent; zellij and orca are never auto-detected, only explicit `--backend <name>`/`FM_BACKEND=<name>`/`config/backend`), validates the requested backend against spawn-capable adapters, owns the verified launch templates, resolves the project's delivery mode (`fm-project-mode.sh`) for ship/scout tasks, and records `harness=`, `model=`, `effort=`, `kind=`, `mode=`, and `yolo=` in the task's meta; only a non-default runtime backend is recorded as `backend=` because absent means tmux.
+The script resolves the harness (`fm-harness.sh crew` for crewmate/scout tasks only when `config/crew-dispatch.json` is absent, `fm-harness.sh secondmate` for `kind=secondmate`; section 4), resolves the runtime backend (`--backend`, then `FM_BACKEND`, then `config/backend`, then runtime auto-detection - the runtime firstmate itself is executing inside, from `$TMUX`/`HERDR_ENV=1`/cmux runtime signals, nesting resolved innermost-first (`$TMUX`, then `HERDR_ENV=1`, then cmux's primary `CMUX_WORKSPACE_ID` marker and documented macOS-only fallbacks last, since cmux is a terminal application rather than a nestable multiplexer; docs/cmux-backend.md "Runtime auto-detection") - then `tmux`; an auto-detected herdr or cmux spawn prints a loud stderr notice, auto-detected tmux stays silent; zellij and orca are never auto-detected, only explicit `--backend <name>`/`FM_BACKEND=<name>`/`config/backend`), validates the requested backend against spawn-capable adapters, owns the verified launch templates, resolves the project's delivery mode (`fm-project-mode.sh`) for ship/scout tasks, unless an explicit `--mode` flag overrides it for this ticket only (section 6), and records `harness=`, `model=`, `effort=`, `kind=`, `mode=`, and `yolo=` in the task's meta; only a non-default runtime backend is recorded as `backend=` because absent means tmux.
 A backend spawn refusal - a missing dependency, an unauthenticated socket, or a version gate - must be surfaced to the captain as a blocker; never silently retry the spawn on a different backend to work around it.
 A non-flag third argument containing whitespace is treated as a raw launch command (only for verifying new adapters).
 When `config/crew-dispatch.json` exists, the script refuses crewmate or scout launches without an explicit harness because firstmate must have already resolved the profile choice at intake.
@@ -548,6 +565,9 @@ The crewmate drives the no-mistakes pipeline (review, test, document, lint, push
 The ship brief intentionally does not restate no-mistakes gate mechanics; it points the crewmate to the version-matched SKILL.md loaded by `/no-mistakes`, `no-mistakes axi run --help`, and per-response `help` lines.
 Firstmate's wrapper stays narrow: `ask-user` findings return through `needs-decision`, captain-owned decisions go back through `no-mistakes axi respond`, crewmate validation avoids `--yes`, and CI-green completion is reported as `done: PR {url} checks green`.
 Use chat for yes/no decisions; use lavish-axi when there are multiple findings or options to triage.
+For Unity: test step = `unity -batchmode -nographics -runTests -testPlatform EditMode` (+PlayMode when applicable); lint = `dotnet format`; CI = headless build via `-buildTarget <platform> -buildPath /tmp/build`.
+
+If `data/<id>/ticket.md` exists: the brief must instruct the crewmate to validate each acceptance criteria item before opening the PR, and include the results as a checked/unchecked markdown checklist in the PR body. Any unmet AC item is a blocker — the crewmate must not open the PR until all items pass or explicitly flag the failure.
 
 Judge a validating crewmate by the run's step status, never by whether its shell is still running.
 Read its current state with `bin/fm-crew-state.sh <id>`: a deterministic, token-tight one-line read that takes the matching no-mistakes run-step as the source of truth and reconciles it against the crewmate's `state/<id>.status` log.
@@ -590,6 +610,7 @@ Genuinely unlanded work (no merged PR head containing the local work and content
 Known benign case: after an external-PR task, a squash merge leaves the branch commits reachable only on the contributor's fork; add the fork as a remote and fetch (`git remote add fork <fork url> && git fetch fork`), then retry - never reach for `--force`.
 After a successful PR-based teardown, it also runs `bin/fm-fleet-sync.sh` for that project, best-effort, so safe clone states catch up to the merge, clean detached ancestor drift self-heals, and the just-merged branch, now gone on the remote and free of its worktree, is pruned immediately.
 Unsafe drift is reported as `STUCK:` and left untouched.
+`bin/fm-teardown.sh` also runs `bin/fm-unblock.sh <id>` itself on a normal (non-`--force`) teardown: it rewrites every other ticket's `## Status` and every `data/backlog.md` `blocked-by:` annotation that names this id as a blocker (clearing to `Ready` if it was the only blocker, otherwise just dropping this id from the list), archives the full `data/<id>/ticket.md` content into `data/ticket-archive.md`, then deletes `data/<id>/ticket.md`. No manual deletion step remains, and this prevents another ticket's blocker reference from ever going dangling once its blocker completes. `--force` skips this (it means the captain chose to discard unlanded work, not that it finished).
 Then update the backlog using the teardown reminder: run `tasks-axi done` when the default tasks-axi backend is active and compatible, otherwise move the task to Done in `data/backlog.md` manually with the full `https://...` PR URL or local merge note and date and keep Done to the 10 most recent.
 Re-evaluate the queue and dispatch only queued work whose blockers are gone and whose time/date gate, if any, has arrived.
 
@@ -610,6 +631,7 @@ A scout task follows Intake, Spawn, and Supervise exactly as above - scaffold th
 - Relay the findings to the captain: plain chat for a focused answer, lavish-axi when the report has structure worth a visual (multiple findings, options, a plan).
 - Tear down immediately - no merge gate. `bin/fm-teardown.sh` allows a scout worktree's scratch commits and dirty files once the report exists; if the report is missing, it refuses, because the findings are the work product.
 - Record it in Done with the report path instead of a PR link using `tasks-axi done` when the default tasks-axi backend is active and compatible, otherwise hand-edit `data/backlog.md` and keep Done to the 10 most recent, then re-evaluate the queue and dispatch only queued work whose blockers are gone and whose time/date gate, if any, has arrived.
+- `bin/fm-unblock.sh` no-ops for scout tasks since they never have a `data/<id>/ticket.md` — nothing to archive or propagate.
 
 **Promotion.** When a scout's findings reveal shippable work (a reproduced bug with a clear fix) and the captain wants it shipped, promote the task in place instead of respawning: run `bin/fm-promote.sh <id>` (flips `kind=` to ship in meta, restoring teardown's full protection), then send the crewmate its ship instructions - inventory scratch state, reset to a clean default-branch base, carry over only intended fix changes, create branch `fm/<id>`, implement, and report `done` according to the project's delivery mode.
 The crewmate keeps its worktree, loaded context, and repro, but the ship branch must start from a clean base with only intended changes; scratch commits and debug edits from the scout phase never ride along.
@@ -772,16 +794,18 @@ Update it on every dispatch, completion, and decision.
 
 ```markdown
 ## In flight
-- [ ] <id> - <one line> (repo: <name>, since <date>)
+- [ ] <id> - <one line> (repo: <name>, since <date>) [ticket](data/<id>/ticket.md)
 
 ## Queued
-- [ ] <id> - <one line> (repo: <name>) blocked-by: <id> - <reason>
+- [ ] <id> - <one line> (repo: <name>) blocked-by: <id>[, <id>...] - <reason> [ticket](data/<id>/ticket.md)
 
 ## Done
 - [x] <id> - <one line> - <https://github.com/owner/repo/pull/number> (merged <date>)
 - [x] <id> - <one line> - local main (merged <date>)
 - [x] <id> - <one line> - data/<id>/report.md (reported <date>)
 ```
+
+`blocked-by:` (and a ticket's own `## Status: Blocked by ...` field) can name more than one id, comma-separated: `blocked-by: <id1>, <id2> - <reason>`. `bin/fm-unblock.sh` (run automatically by `bin/fm-teardown.sh`, section 7) keeps these current: when a named blocker completes, it drops just that id from the list, or clears the annotation/flips Status to `Ready` once the last blocker is gone — so a ticket's blocked-by references never point at a completed, deleted ticket. `data/ticket-archive.md` is a separate, firstmate-owned file (not managed by `tasks-axi`) holding the full content of every deleted `ticket.md`, appended by `bin/fm-unblock.sh` at teardown — consult it to resolve a blocker id that no longer appears anywhere else.
 
 Re-evaluate Queued on every teardown and every heartbeat: anything whose blocker is gone and whose time/date gate, if any, has arrived gets dispatched.
 
@@ -823,7 +847,8 @@ Scaffold with `bin/fm-brief.sh <id> <repo-name>` - it writes `data/<id>/brief.md
 The ship-brief Setup opens with a worktree-isolation assertion ahead of the branch step: the crewmate confirms it is in its own disposable task worktree, not the primary checkout, and stops with `blocked: launched in primary checkout, not an isolated worktree` if not - the upstream half of the worktree-tangle guard (section 8).
 For a ship task the definition of done is shaped by the project's delivery mode (section 6): `no-mistakes` stops after the implementation commit, then firstmate triggers the harness-appropriate no-mistakes validation pipeline; `direct-PR` has the crewmate push and open the PR itself, and `local-only` has it stop at "ready in branch" for firstmate to review and merge locally.
 The no-mistakes brief points to no-mistakes' version-matched guidance and keeps only firstmate-specific wrapper rules for `ask-user` escalation, `--yes` avoidance, and the CI-green done line.
-The scaffold reads the mode via `fm-project-mode.sh`, so you do not pass it.
+The scaffold reads the mode via `fm-project-mode.sh`, so you do not pass it; pass `--mode <no-mistakes|direct-PR|local-only>` to apply a per-ticket override instead (section 6), and pass the identical `--mode` to `fm-spawn.sh` for the same task.
+If `data/<id>/ticket.md` exists, the brief must instruct the crewmate to read it and build against its acceptance criteria.
 Ship briefs also include the project-memory contract: run `bin/fm-ensure-agents-md.sh` when the project already has agent-memory files or when the task produced durable project-intrinsic knowledge, then record proportionate learnings in `AGENTS.md`.
 For scout tasks add `--scout`: the scaffold swaps the definition of done for the report contract (findings to `data/<id>/report.md`, no branch, no push, no PR) and declares the worktree scratch; scout is mode-agnostic.
 Scout briefs do not include the project-memory step, because their deliverable is a report rather than a committed project change.
