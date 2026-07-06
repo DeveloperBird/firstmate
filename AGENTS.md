@@ -25,7 +25,7 @@ Hard rules, in priority order:
 1. **Never write to a project.**
    You must not edit, commit to, or run state-changing commands in anything under `projects/` or in any worktree.
    You read projects to understand them; crewmates change them.
-   Six sanctioned write exceptions are indexed here; their procedures live where they are used: tool-driven project initialization (section 6), fleet sync via `bin/fm-fleet-sync.sh` (sections 3 and 7), local-HEAD secondmate sync via `bin/fm-bootstrap.sh` and `bin/fm-spawn.sh` (sections 3 and 7), inheritable config propagation via `bin/fm-config-push.sh` and the bootstrap/spawn convergence paths (sections 3 and 4), self-update via `/updatefirstmate` and `bin/fm-update.sh` (section 12), and approved `local-only` merge via `bin/fm-merge-local.sh` (section 7).
+   Six sanctioned write exceptions are indexed here; their procedures live where they are used: tool-driven project setup at clone/create time, including one-time local pool/tooling config (section 6), fleet sync via `bin/fm-fleet-sync.sh` (sections 3 and 7), local-HEAD secondmate sync via `bin/fm-bootstrap.sh` and `bin/fm-spawn.sh` (sections 3 and 7), inheritable config propagation via `bin/fm-config-push.sh` and the bootstrap/spawn convergence paths (sections 3 and 4), self-update via `/updatefirstmate` and `bin/fm-update.sh` (section 12), and approved `local-only` merge via `bin/fm-merge-local.sh` (section 7).
    All are fast-forward operations, guarded gitignored-config propagation, or guarded local merges that never force, stash, or discard unlanded work.
    Project `AGENTS.md` maintenance is not another exception: firstmate records not-yet-committed project knowledge in `data/`, and crewmates update project `AGENTS.md` through normal delivery (section 6).
 2. **Never merge a PR without the captain's explicit word.**
@@ -416,6 +416,12 @@ Decide this when writing the ticket (grill session or otherwise) and record it a
 Creating a GitHub repo is outward-facing, so get the captain's consent before touching GitHub: propose the repo name, owner/org, visibility (default private), and delivery mode, and create with `gh-axi` only after the captain confirms.
 Then clone it into `projects/<name>` and initialize only if the mode is `no-mistakes`.
 For `local-only`, create the local repo under `projects/<name>` and skip GitHub entirely.
+
+**Configure treehouse worktree root (every clone/create, before first spawn, any mode):** every project in this fleet is a Unity project living on the Windows-mounted NTFS drive; Unity only runs as a Windows process here and refuses to open a project over a case-sensitive UNC path.
+treehouse's default worktree root (`$HOME`) is WSL's native case-sensitive ext4 filesystem, breaking not just `-runTests` but any live Unity Editor/unity-mcp session against a crewmate's worktree.
+Immediately after clone or create, before the first `treehouse get`/spawn, set the project's own `treehouse.toml` at its repo root (`treehouse init` first if absent) to `root = "./"` (plus `max_trees`), keeping pooled worktrees under `{repo_root}/.treehouse/` - an ordinary NTFS path Unity.exe can reach.
+This is a one-time, local-only, gitignored file, written directly (the broadened project-setup exception above).
+Also add `.treehouse/` to the project's own tracked `.gitignore` if not already covered, through the normal crewmate/PR flow since `.gitignore` is tracked source.
 
 **Initialize (`no-mistakes` mode only):**
 
