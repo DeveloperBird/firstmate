@@ -1,6 +1,6 @@
 # The bin/ toolbelt
 
-The first mate drives these; interactive entrypoints work by hand too, while `*-lib.sh` files are sourced helpers.
+Firstmate drives these; interactive entrypoints work by hand too, while `*-lib.sh` files are sourced helpers.
 Each file also starts with a short header comment.
 If you have changed away from the firstmate home in an interactive shell, invoke these scripts by absolute path through the repo's `bin/` directory; the scripts self-locate internally after they start.
 
@@ -31,7 +31,7 @@ If you have changed away from the firstmate home in an interactive shell, invoke
 | `fm-marker-lib.sh`       | Shared from-firstmate request marker and detector sourced by `fm-send.sh`, `fm-brief.sh`, and tests                 |
 | `fm-watch-arm.sh`        | Verified per-home watcher re-arm; reports `started`, `healthy`, or `FAILED`; `--restart` relaunches only this home's watcher |
 | `fm-watch.sh`            | Singleton-safe always-on watcher and default pull-based event source; uses backend-native busy state when available before the shared regex fallback, absorbs no-verb signal and stale wakes only when the crew is provably working, checks that evidence before trusting stale status-log terminality, queues and exits for actionable wakes, and reverts to daemon-owned one-shot behavior while `state/.afk` exists |
-| `fm-supervise-daemon.sh` | Presence-gated sub-supervisor for walk-away (`/afk`) supervision: wraps `fm-watch.sh`, uses the shared wake classifier, backend-aware stale rechecks, and tmux/herdr supervisor injection, self-handles routine wakes in bash, and escalates only captain-relevant events as one verified, batched, single-line digest prefixed with a sentinel marker |
+| `fm-supervise-daemon.sh` | Presence-gated sub-supervisor for walk-away (`/afk`) supervision: wraps `fm-watch.sh`, uses the shared wake classifier, backend-aware stale rechecks, and tmux/herdr supervisor injection, self-handles routine wakes in bash, and escalates only user-relevant events as one verified, batched, single-line digest prefixed with a sentinel marker |
 | `fm-crew-state.sh`       | Print one stable current-state line for a crew by reconciling its matching no-mistakes run-step, including coarse cross-branch attribution from `no-mistakes runs`, even when the pane has closed, with backend-aware pane fallback that corroborates native idle/unknown verdicts before the status log |
 | `fm-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification sourced by bootstrap and guard         |
 | `fm-supervision-lib.sh`  | Shared grace-based "in-flight work exists but no watcher has a fresh beacon" status and predicate used by `fm-guard.sh`; `fm-turnend-guard.sh` uses it for banner fields and relies on `fm-wake-lib.sh` for live watcher lock health |
@@ -40,7 +40,7 @@ If you have changed away from the firstmate home in an interactive shell, invoke
 | `fm-tasks-axi-lib.sh`    | Shared backlog-backend selector and `tasks-axi` compatibility probe sourced by bootstrap and teardown              |
 | `fm-wake-drain.sh`       | Atomically drain queued watcher wakes before handling supervision work, then run the watcher-liveness guard         |
 | `fm-wake-lib.sh`         | Shared durable wake queue, portable lock helpers, and watcher identity/health helpers sourced by the watcher, drain, arm, guard, turn-end guard, and daemon |
-| `fm-classify-lib.sh`     | Shared captain-relevant wake classifier sourced by the watcher and daemon, plus the watcher's provably-working predicate |
+| `fm-classify-lib.sh`     | Shared user-relevant wake classifier sourced by the watcher and daemon, plus the watcher's provably-working predicate |
 | `fm-send.sh`             | Send one verified literal line or backend-supported `--key` through the target's recorded runtime backend; exits non-zero on confirmed swallowed Enter; bare `kind=secondmate` targets are marked as from-firstmate; slash commands and codex `$...` skill invocations get popup-settle before backend-specific submit verification; text sends pause `FM_SEND_SETTLE` seconds after success |
 | `fm-tmux-lib.sh`         | Shared tmux pane primitives for busy detection, dim-ghost-aware and border-aware composer detection, and verified submit retry |
 | `fm-peek.sh`             | Print a bounded tail of a crewmate endpoint through the target's recorded runtime backend                            |

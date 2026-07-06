@@ -17,13 +17,13 @@ Pick tmux unless you have a specific reason to try an experimental backend (herd
 - `node`, required by firstmate's universal toolchain.
 - `treehouse` for pooling clean worktrees; `no-mistakes` for the validation pipeline; `gh-axi`, `chrome-devtools-axi`, and `lavish-axi` for GitHub, browser, and rich-review operations.
 
-The first mate detects missing tools at session start and offers to install them after you approve.
+Firstmate detects missing tools at session start and offers to install them after you approve.
 
 ## Selecting it
 
 tmux is the hard default: it needs no explicit selection.
 It is also what firstmate falls back to when nothing else is set - no local `config/backend` file, no `FM_BACKEND`, no explicit `--backend` flag firstmate passes internally when it spawns a task - and runtime auto-detection (see below) does not pick anything either.
-You can still select it explicitly by putting `tmux` in a local `config/backend` file - the durable way to pick it - or by exporting `FM_BACKEND=tmux` when you launch your harness for a one-off session; telling the first mate in chat to use tmux also works.
+You can still select it explicitly by putting `tmux` in a local `config/backend` file - the durable way to pick it - or by exporting `FM_BACKEND=tmux` when you launch your harness for a one-off session; telling firstmate in chat to use tmux also works.
 This mainly matters as an opt-out of herdr or cmux runtime auto-detection (see [`docs/herdr-backend.md`](herdr-backend.md) and [`docs/cmux-backend.md`](cmux-backend.md)).
 
 ## First run
@@ -57,12 +57,12 @@ tmux select-window -t <session-name>:fm-<id> # jump to one, or use ctrl-b <n>
 ```
 
 Use the current tmux session name when firstmate was launched inside tmux; use `firstmate` only for the detached outside-tmux path.
-Typing directly into an attached window is authoritative direct intervention - the first mate treats it the same as any other captain instruction and reconciles at the next heartbeat.
-You do not need to attach at all for routine supervision: the first mate reads crew windows itself with `bin/fm-peek.sh fm-<id>` (a bounded, read-only capture) and steers a crew with `bin/fm-send.sh fm-<id> "<text>"` when it needs to intervene.
+Typing directly into an attached window is authoritative direct intervention - firstmate treats it the same as any other user instruction and reconciles at the next heartbeat.
+You do not need to attach at all for routine supervision: firstmate reads crew windows itself with `bin/fm-peek.sh fm-<id>` (a bounded, read-only capture) and steers a crew with `bin/fm-send.sh fm-<id> "<text>"` when it needs to intervene.
 
 ## Verifying it works
 
-Ask the first mate for any small piece of work, or spawn a trivial scout task, and confirm a new window shows up:
+Ask firstmate for any small piece of work, or spawn a trivial scout task, and confirm a new window shows up:
 
 ```sh
 tmux list-windows -t <session-name>
