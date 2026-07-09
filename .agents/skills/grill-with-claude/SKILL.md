@@ -20,6 +20,7 @@ Apply `/grilling` discipline, with no fixed target count — ask as many questio
 - Walk the design tree from the most foundational decision outward
 - Resolve dependencies in order (don't ask about caching strategy before the data model is settled)
 - For each decision point, ask: "if I sat down to write this right now, what would I have to invent or assume?" Every assumption becomes a question — data shapes, error/edge-case behavior, boundaries and limits, naming, integration points, what's explicitly out of scope
+- Always ask whether the work needs its own dedicated test scene or harness for isolated verification, separate from the main app/game flow — some behavior is only cleanly checkable in isolation (e.g. a gameplay system exercised without needing a full run set up around it)
 - Don't stop at the first pass over the design tree — an answer often exposes a new sub-decision underneath it (e.g. "yes, paginate" implies a page-size default and a cursor-vs-offset choice). Keep drilling into each branch until answers bottom out in concrete, implementable detail with nothing left to infer
 - For each question, produce exactly 3 suggested answers (concrete, meaningfully distinct options), with your recommended one first
 - Stop only when you can picture writing the ticket's acceptance criteria without inventing a single behavior
@@ -76,6 +77,9 @@ Write `data/<id>/ticket.md`:
 ## Delivery Mode
 <no-mistakes | direct-PR | local-only> - <one-line reason>
 
+## Test Scene
+<Yes - <what it isolates> | No>
+
 ## Goal
 <one or two sentences: what is being built and why>
 
@@ -96,6 +100,11 @@ Rules for Delivery Mode (AGENTS.md §6 per-ticket mode override):
 - Tests involved and touches core functionality (data models, gameplay systems, save/persistence, anything an acceptance criterion calls out a test for) → `no-mistakes`, even if the project's registered default is `direct-PR`
 - Anything else → the project's registered default mode (state that explicitly, e.g. "direct-PR - project default, no override criteria met")
 - This decision is passed to `bin/fm-brief.sh`/`bin/fm-spawn.sh` via `--mode <mode>` at dispatch time; yolo is unaffected and always comes from the project registry
+
+Rules for Test Scene:
+- Default is `No` unless the interview answer says otherwise
+- Set `Yes - <what it isolates>` when the answer calls for verifying the behaviour on its own, apart from the main app/game flow
+- When `Yes`, add an acceptance criterion for building and using that scene/harness so it isn't dropped silently during implementation
 
 Rules for Status:
 - Default is `Ready` — no unresolved dependency or open question
