@@ -1,12 +1,12 @@
 ---
 name: grill-with-claude
-description: A relentless interview to sharpen a plan or design, rendered as a shareable claude.ai Artifact overview with answers collected through structured question prompts. All questions are shown at once on the artifact; each is answered via a recommended-first multiple-choice prompt with room for a custom answer.
+description: A relentless interview to sharpen a plan or design, with answers collected through structured question prompts, one small batch at a time. Each question is answered via a recommended-first multiple-choice prompt with room for a custom answer.
 user-invocable: true
 ---
 
 # Grill With Claude
 
-A relentless interview to sharpen a plan or design. The full interview is published as a claude.ai Artifact so it can be read end-to-end or shared, and answers are collected through structured question prompts, one small batch at a time. Output is a ticket file with a goal and acceptance criteria.
+A relentless interview to sharpen a plan or design. Answers are collected through structured question prompts, one small batch at a time. Output is a ticket file with a goal and acceptance criteria.
 
 ## Step 1 — Orient
 
@@ -25,22 +25,11 @@ Apply `/grilling` discipline, with no fixed target count — ask as many questio
 - For each question, produce exactly 3 suggested answers (concrete, meaningfully distinct options), with your recommended one first
 - Stop only when you can picture writing the ticket's acceptance criteria without inventing a single behavior
 
-Hold all questions in memory — they feed both the artifact (Step 3) and the question prompts (Step 4). Don't self-censor the count to keep the artifact short; a thin interview that leaves room for guessing has failed the point of this skill.
+Hold all questions in memory — they feed the question prompts (Step 3). Don't self-censor the count to keep the interview short; a thin interview that leaves room for guessing has failed the point of this skill.
 
-## Step 3 — Publish the overview artifact
+## Step 3 — Collect answers
 
-Load the `artifact-design` skill, then write the full interview as a single HTML file (scratchpad directory) and publish it with the `Artifact` tool. This is a read-only overview — it gives the user something to skim or share, it does not collect answers itself.
-
-Content: one card per question, in question order —
-- The question text as the card header
-- The 3 suggested answers as a plain list, with the recommended one visually marked (e.g. a small "recommended" tag) — not a form, no inputs, no submit button
-- Leave a visible "answered" placeholder area empty for now; Step 4 does not edit this artifact after the fact, so don't build interactivity expecting a later update
-
-Give it a distinct favicon (e.g. 🔥) and a title naming the plan being grilled. Tell the user in one line that the interview overview is published, then move straight to Step 4 — don't wait for a reaction to the artifact.
-
-## Step 4 — Collect answers
-
-Use the `AskUserQuestion` tool to actually gather answers. It accepts at most 4 questions per call, so batch the full interview into as many calls of 4 as needed (a 10-question interview is 3 calls: 4 + 4 + 2). Keep question order identical to the artifact.
+Use the `AskUserQuestion` tool to actually gather answers. It accepts at most 4 questions per call, so batch the full interview into as many calls of 4 as needed (a 10-question interview is 3 calls: 4 + 4 + 2). Keep question order identical to Step 2.
 
 Per question:
 - `question`: the full question text
@@ -52,7 +41,7 @@ Fire each batch as a single `AskUserQuestion` call (all questions in that batch 
 
 If an answer exposes a new sub-decision that Step 2 didn't already cover (a follow-up gap, not a rephrase), add that question now rather than letting it slide into "Needs details" — append it to the queue and ask it in the next batch, applying the same 3-option format. Keep going until no answer leaves a gap a developer would have to guess through.
 
-## Step 5 — Generate tickets
+## Step 4 — Generate tickets
 
 Synthesize all answers into one or more ticket files. Split on natural seams — each ticket should be executable by an agent in one focused session without needing to hold the full design in context.
 
