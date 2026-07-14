@@ -19,7 +19,10 @@
 #
 # Reference formats rewritten:
 #   ticket.md `## Status` body:  Blocked by <id1>[, <id2>...]: <reason>
-#   data/backlog.md annotation:  blocked-by: <id1>[, <id2>...] - <reason>
+#   data/backlog.md annotation:  blocked-by: <id1>[, <id2>...][ - <reason>]
+# The backlog reason suffix is optional and the clause need not end the
+# line - real backlog lines commonly run the ids straight into trailing
+# `(repo: ...)`/`(kind: ...)`/`[ticket](...)` metadata with no reason text.
 # When the completed id is the only blocker, the ticket.md Status flips to
 # `Ready` and the backlog annotation is dropped entirely. When other blockers
 # remain, only this id is removed from the list; the reason text is left
@@ -76,16 +79,17 @@ if [ -f "$BACKLOG" ]; then
   before=$(cat "$BACKLOG")
   FM_UNBLOCK_ID="$ID" perl -i -pe '
     my $target = $ENV{FM_UNBLOCK_ID};
-    if (/^(.*?) blocked-by: ([\w,\s-]+?) - (.*?)( \[ticket\]\([^)]*\))?$/) {
-      my ($prefix, $idsraw, $reason, $link) = ($1, $2, $3, $4);
-      $link = "" unless defined $link;
+    if (/( blocked-by: ([\w-]+(?:,\s*[\w-]+)*)(?: - (?:(?!\s*[\[(]).)*)?)/) {
+      my ($fullmatch, $idsraw) = ($1, $2);
       my @ids = split(/,\s*/, $idsraw);
       if (grep { $_ eq $target } @ids) {
         my @remaining = grep { $_ ne $target } @ids;
         if (@remaining) {
-          $_ = "$prefix blocked-by: " . join(", ", @remaining) . " - $reason$link\n";
+          my $newids = join(", ", @remaining);
+          (my $replacement = $fullmatch) =~ s/\Q$idsraw\E/$newids/;
+          s/\Q$fullmatch\E/$replacement/;
         } else {
-          $_ = "$prefix$link\n";
+          s/\Q$fullmatch\E//;
         }
       }
     }

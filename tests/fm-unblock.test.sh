@@ -10,6 +10,11 @@
 #       clear to Ready / lose the annotation; ticket archived and deleted
 #   (b) multiple blockers on one downstream reference -> only the completed
 #       id drops, remaining id(s) and reason text untouched
+#   (b2) same as (a)/(b) but for the real-world backlog shape with no inline
+#       "- reason" and trailing (repo:)/(kind:)/[ticket](...) metadata after
+#       the blocked-by clause - the shape that motivated this file's Pass 2
+#       fix, since the original line-end-anchored regex silently never
+#       matched it
 #   (c) no references anywhere -> clean no-op beyond archive+delete
 #   (d) missing ticket.md (already deleted, or a scout/secondmate id that
 #       never had one) -> silent no-op, exit 0
@@ -88,6 +93,45 @@ test_multi_blocker_keeps_remaining() {
   pass "multiple blockers: only the completed id drops, remaining blocker and reason untouched"
 }
 
+test_backlog_line_without_reason_suffix_clears() {
+  local dir rc
+  dir=$(make_case no-reason-suffix)
+  write_ticket "$dir" blocker-a Ready
+  write_ticket "$dir" downstream-b "Blocked by blocker-a: needs blocker-a"
+  printf '%s\n' "## Queued" \
+    "- [ ] downstream-b - depends on blocker-a blocked-by: blocker-a (repo: x) (kind: ship) [ticket](data/downstream-b/ticket.md) (since 2026-07-13)" \
+    > "$dir/backlog.md"
+
+  set +e
+  run_unblock "$dir" blocker-a > "$dir/out" 2>"$dir/err"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "no-reason-suffix: exit code"
+  assert_no_grep "blocked-by:" "$dir/backlog.md" \
+    "no-reason-suffix: backlog annotation should be gone even with no inline reason and trailing metadata"
+  assert_grep "- [ ] downstream-b - depends on blocker-a (repo: x) (kind: ship) [ticket](data/downstream-b/ticket.md) (since 2026-07-13)" "$dir/backlog.md" \
+    "no-reason-suffix: rest of the backlog line, including trailing metadata after the ticket link, should be untouched"
+  pass "backlog line with no inline reason and trailing metadata after blocked-by still clears"
+}
+
+test_backlog_multi_blocker_no_reason_keeps_remaining() {
+  local dir
+  dir=$(make_case no-reason-multi)
+  write_ticket "$dir" blocker-a Ready
+  write_ticket "$dir" downstream-c "Blocked by blocker-a, other-id: needs both"
+  printf '%s\n' "## Queued" \
+    "- [ ] downstream-c - depends on two blocked-by: blocker-a, other-id (repo: x) [ticket](data/downstream-c/ticket.md)" \
+    > "$dir/backlog.md"
+
+  run_unblock "$dir" blocker-a > "$dir/out" 2>"$dir/err"
+
+  assert_grep "blocked-by: other-id (repo: x)" "$dir/backlog.md" \
+    "no-reason-multi: backlog should still name other-id with no reason, trailing metadata untouched"
+  assert_no_grep "blocker-a" "$dir/backlog.md" "no-reason-multi: blocker-a should be gone from backlog"
+  pass "backlog line with no inline reason and multiple blockers only drops the completed id"
+}
+
 test_no_references_clean_noop() {
   local dir rc
   dir=$(make_case no-refs)
@@ -154,6 +198,8 @@ test_archive_has_verbatim_content() {
 
 test_single_blocker_clears
 test_multi_blocker_keeps_remaining
+test_backlog_line_without_reason_suffix_clears
+test_backlog_multi_blocker_no_reason_keeps_remaining
 test_no_references_clean_noop
 test_missing_ticket_is_noop
 test_idempotent_second_run
