@@ -797,7 +797,7 @@ Update it on every dispatch, completion, and decision.
 - [ ] <id> - <one line> (repo: <name>, since <date>) [ticket](data/<id>/ticket.md)
 
 ## Queued
-- [ ] <id> - <one line> (repo: <name>) blocked-by: <id>[, <id>...] - <reason> [ticket](data/<id>/ticket.md)
+- [ ] <id> - <one line> (repo: <name>) blocked-by: <id>[, <id>...][ - <reason>] [ticket](data/<id>/ticket.md)
 
 ## Done
 - [x] <id> - <one line> - <https://github.com/owner/repo/pull/number> (merged <date>)
@@ -805,7 +805,7 @@ Update it on every dispatch, completion, and decision.
 - [x] <id> - <one line> - data/<id>/report.md (reported <date>)
 ```
 
-`blocked-by:` (and a ticket's own `## Status: Blocked by ...` field) can name more than one id, comma-separated: `blocked-by: <id1>, <id2> - <reason>`. `bin/fm-unblock.sh` (run automatically by `bin/fm-teardown.sh`, section 7) keeps these current: when a named blocker completes, it drops just that id from the list, or clears the annotation/flips Status to `Ready` once the last blocker is gone — so a ticket's blocked-by references never point at a completed, deleted ticket. `data/ticket-archive.md` is a separate, firstmate-owned file (not managed by `tasks-axi`) holding the full content of every deleted `ticket.md`, appended by `bin/fm-unblock.sh` at teardown — consult it to resolve a blocker id that no longer appears anywhere else.
+`blocked-by:` (and a ticket's own `## Status: Blocked by ...` field) can name more than one id, comma-separated: `blocked-by: <id1>, <id2>[ - <reason>]`. The reason suffix is optional and the clause need not end the line - a real backlog line commonly runs the id list straight into trailing `(repo: ...)`/`(kind: ...)`/`[ticket](...)` metadata with no reason text at all. `bin/fm-unblock.sh` (run automatically by `bin/fm-teardown.sh`, section 7) keeps these current: when a named blocker completes, it drops just that id from the list, or clears the annotation/flips Status to `Ready` once the last blocker is gone — so a ticket's blocked-by references never point at a completed, deleted ticket. `data/ticket-archive.md` is a separate, firstmate-owned file (not managed by `tasks-axi`) holding the full content of every deleted `ticket.md`, appended by `bin/fm-unblock.sh` at teardown — consult it to resolve a blocker id that no longer appears anywhere else.
 
 Re-evaluate Queued on every teardown and every heartbeat: anything whose blocker is gone and whose time/date gate, if any, has arrived gets dispatched.
 
@@ -816,7 +816,7 @@ Compatible means the shared bootstrap probe accepts `tasks-axi --version` as 0.1
 When the default backend is selected and compatible `tasks-axi` is on PATH, firstmate mutates the backlog through its verbs instead of hand-editing, with secondmate handoffs still going through the validated helper described in section 6.
 When the default backend is selected but `tasks-axi` is missing or incompatible, bootstrap suggests `npm install -g tasks-axi` through the normal consent flow, and every firstmate home falls back to hand-editing `data/backlog.md` exactly as this section describes until it is installed.
 When `config/backlog-backend=manual`, every firstmate home hand-edits and bootstrap does not suggest installing `tasks-axi`.
-The `## In flight` / `## Queued` / `## Done` format above stays the contract: the verbs edit `data/backlog.md` in place, byte-exact, preserving whatever item forms the file already uses - the bold in-flight `- **<id>**` form, the `- [ ]`/`- [x]` queued and done forms, and `blocked-by: <id> - <reason>` - rather than reformatting them.
+The `## In flight` / `## Queued` / `## Done` format above stays the contract: the verbs edit `data/backlog.md` in place, byte-exact, preserving whatever item forms the file already uses - the bold in-flight `- **<id>**` form, the `- [ ]`/`- [x]` queued and done forms, and `blocked-by: <id>[ - <reason>]` - rather than reformatting them.
 Secondmates inherit `config/backlog-backend` from the primary.
 If the primary leaves the file absent, each home uses the default tasks-axi backend path with its own `.tasks.toml`; if the primary opts out with `manual`, secondmate homes hand-edit too.
 Keep Done to the 10 most recent entries.
