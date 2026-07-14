@@ -103,7 +103,7 @@ fi
 # Archive the ticket's full content, then delete it. Only the file is
 # removed, never the data/<id>/ directory - it may hold a sibling brief.md
 # or report.md.
-[ -f "$ARCHIVE" ] || printf '# Ticket Archive\n\nCompleted tickets whose ticket.md was deleted at teardown. Kept here (not\nunder the `ticket.md` filename ticket-board scans for) so a stale-looking\n"Blocked by <id>" reference can still be resolved by hand.\n\n' > "$ARCHIVE"
+[ -f "$ARCHIVE" ] || printf '# Ticket Archive\n\nCompleted tickets whose ticket.md was deleted at teardown. Kept here (not\nunder the "ticket.md" filename ticket-board scans for) so a stale-looking\n"Blocked by <id>" reference can still be resolved by hand.\n\n' > "$ARCHIVE"
 {
   printf '## %s (archived %s)\n\n' "$ID" "$(date +%Y-%m-%d)"
   cat "$TICKET"

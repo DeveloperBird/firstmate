@@ -360,7 +360,9 @@ _nm_status_cached() {
   _nm_cache_valid && cat "$_nm_cache_file"
 }
 _nm_status_write() {
-  [ "$NM_CACHE_TTL" -gt 0 ] && printf '%s' "$RUN_OUT" > "$_nm_cache_file" 2>/dev/null || true
+  if [ "$NM_CACHE_TTL" -gt 0 ]; then
+    printf '%s' "$RUN_OUT" > "$_nm_cache_file" 2>/dev/null || true
+  fi
 }
 
 HAVE_RUN=0
