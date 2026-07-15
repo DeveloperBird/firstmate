@@ -74,3 +74,6 @@ You should see a `fm-<id>` window for the task, live and updating as the crewmat
 ## Limitations
 
 None specific to tmux - it is the fully verified reference backend, while Orca and cmux are the backends without secondmate support.
+
+If your session name is a bare small integer (tmux's own default naming scheme when a session is started without `-s`, e.g. `0`), append a trailing colon to the manual commands above (`tmux list-windows -t <session-name>:`) - otherwise tmux can parse the bare number as a window-index target in your current session instead of a session name.
+Firstmate's own internal tmux calls already do this (`bin/backends/tmux.sh`).
