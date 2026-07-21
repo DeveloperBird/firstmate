@@ -305,6 +305,7 @@ All truth lives in each task's backend live-task inventory (tmux by hard default
 ## 6. Project management
 
 All projects are Unity game projects. Use Unity Editor CLI (`-batchmode -nographics -runTests -testPlatform EditMode|PlayMode -buildTarget <target>`) — never open Unity GUI from a script. Unity version pinned in `ProjectSettings/ProjectVersion.txt`. Package dependencies in `Packages/manifest.json` via Unity Package Manager — never hand-edit `packages-lock.json`. C# is the project language; `dotnet` is for formatting (`dotnet format`) and static analysis only.
+Avoid the live-Editor `unity-mcp` interactions - Play/Pause/Stop editor control and any camera/scene-view capture tool - unless the task genuinely requires visual verification of the live Editor, and never run more than one live (non-batch) Unity Editor GUI session at a time, because these tools control a real, visible Unity Editor window on the shared physical Windows host and servicing them can force that window to the foreground and steal keyboard/mouse focus from whoever is using the machine.
 
 All projects live flat under `projects/`.
 
