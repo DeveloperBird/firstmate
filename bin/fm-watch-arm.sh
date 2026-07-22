@@ -154,8 +154,13 @@ child_out=$(mktemp "$STATE/.watch-arm-output.XXXXXX") || {
 }
 # Persist the child's stderr straight into the crash log (never the ephemeral
 # $child_out, which a failure path deletes) so a bash error that kills the
-# watcher (e.g. set -u on an unbound variable) is never lost with it.
-"$WATCH" >"$child_out" 2>>"$CRASH_LOG" &
+# watcher (e.g. set -u on an unbound variable) is never lost with it. Routed
+# through a line-reading process substitution rather than a raw `2>>` append so
+# every line goes through fm_capped_log_append's own cap-and-rotate (bounding
+# growth across a long-lived healthy watcher, not just at exit-detection
+# points) and each append reopens the file by path instead of holding a
+# long-lived fd across the helper's tail+mv rotation.
+"$WATCH" >"$child_out" 2> >(while IFS= read -r line; do crash_log_append "$line"; done) &
 child=$!
 child_done=0
 
