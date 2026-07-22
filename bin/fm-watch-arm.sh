@@ -47,6 +47,16 @@ GRACE=${FM_GUARD_GRACE:-300}
 # How long to wait for a freshly forked watcher to acquire the lock and beat.
 CONFIRM_TIMEOUT=${FM_ARM_CONFIRM_TIMEOUT:-10}
 
+# Persistent record of an abnormal watcher exit or unconfirmed-timeout
+# termination: this is the forensic evidence that used to vanish along with
+# the ephemeral $child_out temp file (see crash_log_append below). Unlike
+# $child_out, this file is never deleted by a failure path.
+CRASH_LOG="$STATE/.watch-crash.log"
+CRASH_LOG_MAX_BYTES=${FM_WATCH_CRASH_LOG_MAX_BYTES:-262144}
+crash_log_append() {  # <message>
+  fm_capped_log_append "$CRASH_LOG" "$CRASH_LOG_MAX_BYTES" "$1"
+}
+
 clear_stale_recorded_watcher_lock() {
   local lock_home lock_path lock_identity
   lock_home=$(cat "$WATCH_LOCK/fm-home" 2>/dev/null || true)
@@ -142,7 +152,10 @@ child_out=$(mktemp "$STATE/.watch-arm-output.XXXXXX") || {
   echo "watcher: FAILED - no live watcher with a fresh beacon"
   exit 1
 }
-"$WATCH" >"$child_out" &
+# Persist the child's stderr straight into the crash log (never the ephemeral
+# $child_out, which a failure path deletes) so a bash error that kills the
+# watcher (e.g. set -u on an unbound variable) is never lost with it.
+"$WATCH" >"$child_out" 2>>"$CRASH_LOG" &
 child=$!
 child_done=0
 
@@ -156,6 +169,13 @@ while :; do
       echo "watcher: started pid=$child (beacon fresh)"
       wait "$child"
       rc=$?
+      # This is the long-lived supervision window (this arm blocks here for the
+      # watcher's whole life). A wake always exits 0 with a reason line; any
+      # other outcome is the watcher dying unexpectedly, so persist it before
+      # $child_out - the only record of why - is deleted below.
+      if [ "$rc" -ne 0 ] || ! watch_output_has_wake "$child_out"; then
+        crash_log_append "fm-watch.sh pid=$child exited rc=$rc; last output: $(tail -c 2000 "$child_out" 2>/dev/null | tr '\n' ' ')"
+      fi
       print_watch_output "$child_out"
       rm -f "$child_out" 2>/dev/null || true
       exit "$rc"
@@ -175,11 +195,21 @@ while :; do
       rm -f "$child_out" 2>/dev/null || true
       exit 0
     fi
+    # A non-zero exit here is not a normal no-op (e.g. "already running" exits
+    # 0): the watcher died unexpectedly. Persist its rc and last output before
+    # $child_out is ever removed, even though a live peer may still let this
+    # arm invocation exit cleanly below.
+    if [ "$rc" -ne 0 ]; then
+      crash_log_append "fm-watch.sh pid=$child exited rc=$rc; last output: $(tail -c 2000 "$child_out" 2>/dev/null | tr '\n' ' ')"
+    fi
   fi
   [ "$(date +%s)" -ge "$deadline" ] && break
   sleep 0.2
 done
 
+if [ "$child_done" -eq 0 ]; then
+  crash_log_append "fm-watch.sh pid=$child not confirmed within ${CONFIRM_TIMEOUT}s; terminating and discarding pending output: $(tail -c 2000 "$child_out" 2>/dev/null | tr '\n' ' ')"
+fi
 trap - HUP TERM INT
 echo "watcher: FAILED - no live watcher with a fresh beacon"
 cleanup_child

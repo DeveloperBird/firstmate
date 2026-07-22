@@ -15,6 +15,22 @@ fm_current_pid() {
   printf '%s\n' "${BASHPID:-$$}"
 }
 
+# fm_capped_log_append <file> <max_bytes> <message>: append a timestamped line
+# to <file>, then trim it to its last ~2000 lines once it exceeds <max_bytes>.
+# Shared by every append-only debug/crash log in the fleet (fm-watch.sh's
+# triage log, fm-watch-arm.sh's crash log) so the cap-and-rotate mechanism has
+# one definition. Best-effort: a logging hiccup never affects the caller.
+fm_capped_log_append() {
+  local file=$1 max=$2 msg=$3 sz
+  printf '[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$msg" >> "$file" 2>/dev/null || return 0
+  sz=$(wc -c < "$file" 2>/dev/null | tr -d '[:space:]')
+  case "$sz" in ''|*[!0-9]*) return 0 ;; esac
+  if [ "$sz" -ge "$max" ]; then
+    tail -n 2000 "$file" > "$file.tmp" 2>/dev/null && mv -f "$file.tmp" "$file" 2>/dev/null
+    rm -f "$file.tmp" 2>/dev/null || true
+  fi
+}
+
 fm_pid_alive() {
   local pid=$1
   case "$pid" in

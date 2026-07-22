@@ -144,14 +144,7 @@ afk_present() { [ -e "$STATE/.afk" ]; }
 # size-capped so a long benign stretch cannot grow it without bound. Best-effort:
 # a logging hiccup never affects supervision.
 triage_log() {
-  local sz
-  printf '[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$1" >> "$TRIAGE_LOG" 2>/dev/null || return 0
-  sz=$(wc -c < "$TRIAGE_LOG" 2>/dev/null | tr -d '[:space:]')
-  case "$sz" in ''|*[!0-9]*) return 0 ;; esac
-  if [ "$sz" -ge "$TRIAGE_LOG_MAX_BYTES" ]; then
-    tail -n 2000 "$TRIAGE_LOG" > "$TRIAGE_LOG.tmp" 2>/dev/null && mv -f "$TRIAGE_LOG.tmp" "$TRIAGE_LOG" 2>/dev/null
-    rm -f "$TRIAGE_LOG.tmp" 2>/dev/null || true
-  fi
+  fm_capped_log_append "$TRIAGE_LOG" "$TRIAGE_LOG_MAX_BYTES" "$1"
 }
 
 hash_pane() {

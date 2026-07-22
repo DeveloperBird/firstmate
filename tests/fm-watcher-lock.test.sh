@@ -619,6 +619,37 @@ test_arm_fails_loud_when_no_fresh_watcher_confirmable() {
   pass "arm reports FAILED and exits non-zero when no fresh watcher can be confirmed"
 }
 
+test_arm_logs_crash_when_confirmed_watcher_dies_unexpectedly() {
+  local dir state fakebin armout i wpid status armpid
+  dir=$(make_case arm-crash-log)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  armout="$dir/arm.out"
+  status=0
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
+  armpid=$!
+  i=0
+  while [ "$i" -lt 80 ]; do
+    grep -qF 'watcher: started pid=' "$armout" 2>/dev/null && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  grep -qF 'watcher: started pid=' "$armout" || fail "arm did not confirm a started watcher before the crash-log check"
+  wpid=$(cat "$state/.watch.lock/pid" 2>/dev/null || true)
+  [ -n "$wpid" ] || fail "no watcher pid recorded to kill"
+  # A real crash (SIGKILL, an unhandled bash error, ...) has no chance to print
+  # a wake reason line - unlike the normal exit(0)-with-a-reason path.
+  kill -KILL "$wpid" 2>/dev/null || fail "could not SIGKILL the confirmed watcher"
+  wait_for_exit "$armpid" 80
+  status=$?
+  [ "$status" -ne 0 ] || fail "arm reported success for a watcher killed out from under it (status $status)"
+  [ -s "$state/.watch-crash.log" ] || fail "no persistent crash log was written after the confirmed watcher was killed"
+  grep -F "fm-watch.sh pid=$wpid exited rc=" "$state/.watch-crash.log" >/dev/null \
+    || fail "crash log does not name the killed watcher's pid and exit code: $(cat "$state/.watch-crash.log" 2>/dev/null)"
+  ! ls "$state"/.watch-arm-output.* >/dev/null 2>&1 || fail "ephemeral arm output temp file was left behind"
+  pass "arm persists a crash record when a confirmed watcher dies unexpectedly, surviving the ephemeral temp file's deletion"
+}
+
 test_singleton_start
 test_stale_watch_lock_reclaimed
 test_live_stale_watch_lock_is_actionable
@@ -639,3 +670,4 @@ test_arm_hup_cleans_child_and_temp_output
 test_arm_propagates_immediate_wake_before_confirmation
 test_arm_waits_for_peer_beacon_after_child_stands_down
 test_arm_fails_loud_when_no_fresh_watcher_confirmable
+test_arm_logs_crash_when_confirmed_watcher_dies_unexpectedly
