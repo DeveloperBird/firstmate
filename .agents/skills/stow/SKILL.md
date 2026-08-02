@@ -19,7 +19,7 @@ The goal is a session that is safe to reset or destroy because everything durabl
    Read back over this conversation and look for:
    - Operational learnings: fleet-local facts and gotchas discovered while operating firstmate (a script's sharp edge, a harness quirk, a recurring false alarm and its real cause).
    - User preferences expressed in passing: a working-style or approval preference the user stated conversationally rather than through `data/captain.md` directly.
-   - Project-intrinsic facts discovered: build, test, release, or architecture facts about a project that belong in that project's own `AGENTS.md`.
+   - Project-intrinsic facts discovered: core architecture an agent must know before writing code that fits the codebase, plus terse build/release sharp edges - the kind of fact that belongs in that project's own `AGENTS.md`.
    - Decisions made: a standing choice the user made this session that should outlive it.
    - Undone next steps: anything left open that has not yet been filed as backlog work.
 
