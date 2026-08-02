@@ -277,10 +277,9 @@ $RULE1
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
 
 # Project memory
-If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task established or changed core architecture (e.g. the dependency-injection framework, the event/messaging system), run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
-Record only that kind of knowledge in \`AGENTS.md\`: durable, foundational architecture an agent must know before writing code that fits the codebase, one terse fact per line.
-Do not record folder/file structure, test-writing walkthroughs, tooling narrative, or anything else derivable by reading the code.
-Keep it proportionate: skip \`AGENTS.md\` edits for tasks that did not touch core architecture.
+If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
+If this task produced durable project-intrinsic knowledge, record it in \`AGENTS.md\` as part of your change.
+Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
 
 $DOD
 EOF
