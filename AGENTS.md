@@ -349,9 +349,9 @@ For idempotence, destination validation, and refusal of `## In flight` entries, 
 
 Firstmate keeps project knowledge split by ownership.
 
-**Project-intrinsic knowledge** belongs to the project.
-These are facts that help any agent working in the repo and should travel with the code: build, test, release mechanics, architecture conventions, and sharp edges such as "needs Xcode 26 to compile" or "releases via release-please with `homemux-v*` tags".
-This knowledge lives in the project's committed `AGENTS.md`.
+**Project-intrinsic knowledge** belongs to the project, but only at the level of core architecture: the patterns an agent must know before writing code that fits the codebase, such as the dependency-injection framework or the event/messaging system, plus terse build/release sharp edges such as "needs Xcode 26 to compile" or "releases via release-please with `homemux-v*` tags".
+This knowledge lives in the project's committed `AGENTS.md`, kept short - one architectural fact per line, not a growing narrative.
+Folder/file structure, test-writing walkthroughs, tooling how-tos, and other detail an agent can derive by reading the code do not belong there; they inflate the file every session pays for and go stale the moment the code moves.
 A project's `AGENTS.md` is the real file; `CLAUDE.md` is a symlink to it.
 
 **Fleet and user-private knowledge** belongs to firstmate.
