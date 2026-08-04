@@ -275,6 +275,9 @@ $RULE1
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions, ask-user findings),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
+7. Default to no comments in code you write. Add one only when the WHY is genuinely
+   non-obvious (a hidden constraint, a workaround for a specific bug, a subtle invariant) -
+   never to restate what the code already says through naming and structure.
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task established or changed core architecture (e.g. the dependency-injection framework, the event/messaging system), run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
