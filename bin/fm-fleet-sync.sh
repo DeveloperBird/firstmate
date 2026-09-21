@@ -6,11 +6,16 @@
 # Self-heals the one unambiguously safe drift: a clean, detached HEAD that holds
 # no unique commits (it is an ancestor of origin/<default>) and whose <default>
 # branch is free to check out is re-attached and then fast-forwarded ("recovered:").
-# Every other off-default state - a non-default named branch, a detached HEAD with
-# unique commits, a dirty tree, or a diverged default - may hold real work, so it
-# is left untouched and reported as a quantified, loud "STUCK: ... N commits behind
-# ... - needs attention" warning rather than a quiet drift. Nothing is ever forced,
-# stashed, or discarded.
+# Also self-heals a dirty-but-untracked-only tree when every untracked path would
+# be ignored by the incoming origin/<default>'s .gitignore - breaking the one-time
+# deadlock where a .gitignore fix can never be pulled because the very path it
+# stops flagging is still dirty under the old .gitignore ("recovered:" as well).
+# Every other off-default or dirty state - a non-default named branch, a detached
+# HEAD with unique commits, any staged/unstaged tracked change, an untracked path
+# that would stay untracked post-pull, or a diverged default - may hold real
+# work, so it is left untouched and reported as a quantified, loud "STUCK: ... N
+# commits behind ... - needs attention" warning rather than a quiet drift.
+# Nothing is ever forced, stashed, or discarded.
 # Still skips (benignly) local-only/no-origin projects, missing remotes/branches,
 # and fetch failures.
 # Pruning never deletes the checked-out branch or a branch that still has a
@@ -110,6 +115,44 @@ local_default_safe_for_recovery() {
     || git -C "$PROJ" merge-base --is-ancestor "$DEFAULT" "$BASE" 2>/dev/null
 }
 
+# Prints each dirty path (one per line) only when every entry in `git status
+# --porcelain` is untracked ("??"); returns 1 (nothing printed) as soon as any
+# entry is a staged or unstaged change to a tracked file, which must never take
+# the untracked-only recovery path below.
+untracked_only_paths() {
+  local line code path
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    code=${line:0:2}
+    path=${line:3}
+    [ "$code" = "??" ] || return 1
+    printf '%s\n' "$path"
+  done < <(git -C "$PROJ" status --porcelain 2>/dev/null)
+}
+
+# True when every newline-separated path in $1 would be ignored by the incoming
+# $BASE's top-level .gitignore. Reads that incoming .gitignore into a throwaway
+# temp file (never inside $PROJ) and consults it via core.excludesFile, which
+# git applies exactly as it would a working-tree .gitignore at the repo root -
+# so this never touches or mutates $PROJ's actual working tree.
+all_paths_newly_ignored() {
+  local paths=$1 tmpfile path result=0
+  tmpfile=$(mktemp) || return 1
+  if ! git -C "$PROJ" show "$BASE:.gitignore" > "$tmpfile" 2>/dev/null; then
+    rm -f "$tmpfile"
+    return 1
+  fi
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    if ! git -C "$PROJ" -c core.excludesFile="$tmpfile" check-ignore --quiet -- "$path"; then
+      result=1
+      break
+    fi
+  done <<<"$paths"
+  rm -f "$tmpfile"
+  return "$result"
+}
+
 # Human-readable name for the unsafe state the clone is in, used in the STUCK
 # warning. Reads $cur (current branch, empty when detached), $dirty, and the
 # HEAD-vs-$BASE ancestry to pick the most informative description.
@@ -188,7 +231,7 @@ sync_project() {
   cur=$(git -C "$PROJ" symbolic-ref --short HEAD 2>/dev/null || echo "")
   dirty=no
   [ -z "$(git -C "$PROJ" status --porcelain 2>/dev/null | head -1)" ] || dirty=yes
-  recovered=no
+  recovered_reason=""
 
   if [ "$cur" != "$DEFAULT" ]; then
     # Off the default branch. Auto-recover only the one unambiguously safe drift:
@@ -207,16 +250,26 @@ sync_project() {
         report_stuck "$(stuck_state)"
         return 0
       fi
-      recovered=yes
+      recovered_reason="re-attached $DEFAULT"
       cur=$DEFAULT
     else
       report_stuck "$(stuck_state)"
       return 0
     fi
   elif [ "$dirty" = yes ]; then
-    # On the default branch but with uncommitted changes we must not disturb.
-    report_stuck "$(stuck_state)"
-    return 0
+    # On the default branch with uncommitted changes. The one narrow additive
+    # exception: every dirty entry is an untracked path, and every one of those
+    # paths would become ignored the moment the incoming .gitignore lands - the
+    # one-time chicken-and-egg deadlock a .gitignore fix creates for itself.
+    # Any staged/unstaged tracked change, or any untracked path that would stay
+    # untracked post-pull, keeps today's exact STUCK behavior untouched.
+    if untracked=$(untracked_only_paths) && [ -n "$untracked" ] \
+        && all_paths_newly_ignored "$untracked"; then
+      recovered_reason="$(printf '%s\n' "$untracked" | grep -c .) untracked path(s) newly ignored by incoming .gitignore"
+    else
+      report_stuck "$(stuck_state)"
+      return 0
+    fi
   fi
 
   if ! git -C "$PROJ" rev-parse --verify --quiet "$DEFAULT^{commit}" >/dev/null; then
@@ -233,8 +286,8 @@ sync_project() {
     return 0
   }
   if [ "$local_rev" = "$remote_rev" ]; then
-    if [ "$recovered" = yes ]; then
-      echo "$label: recovered: re-attached $DEFAULT (already current)"
+    if [ -n "$recovered_reason" ]; then
+      echo "$label: recovered: $recovered_reason (already current)"
     else
       echo "$label: already current"
     fi
@@ -261,8 +314,8 @@ sync_project() {
     echo "$label: skipped: fast-forward completed but cannot read local $DEFAULT"
     return 0
   }
-  if [ "$recovered" = yes ]; then
-    echo "$label: recovered: re-attached $DEFAULT, synced $before..$after"
+  if [ -n "$recovered_reason" ]; then
+    echo "$label: recovered: $recovered_reason, synced $before..$after"
   else
     echo "$label: synced $before..$after"
   fi
