@@ -13,6 +13,12 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# The hook under test (bin/fm-turnend-guard.sh) requires real jq to read its
+# stdin payload, and most HOOK-layer cases here exercise that jq-dependent
+# behavior directly (not through a fake), so jq is a real required tool for
+# this whole file - same convention as the other jq-real-tool suites.
+command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by fm-turnend-guard.sh)"; exit 0; }
+
 # shellcheck source=bin/fm-supervision-lib.sh
 . "$ROOT/bin/fm-supervision-lib.sh"
 

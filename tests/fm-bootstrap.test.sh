@@ -69,7 +69,7 @@ SH
 
 add_real_jq() {
   local fakebin=$1 real_jq
-  real_jq=$(command -v jq 2>/dev/null) || fail "jq is required for dispatch profile validation tests"
+  real_jq=$(command -v jq 2>/dev/null) || return 1
   cat > "$fakebin/jq" <<SH
 #!/usr/bin/env bash
 exec '$real_jq' "\$@"
@@ -186,7 +186,7 @@ test_crew_dispatch_active_rules_are_surfaced() {
   printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
   printf '%s\n' '{"rules":[{"when":"fresh news","use":{"harness":"grok"},"why":"current context"},{"when":"big feature","use":{"harness":"codex","model":"gpt-5.5","effort":"high"}}],"default":{"harness":"claude","model":"haiku","effort":"low"}}' > "$case_dir/home/config/crew-dispatch.json"
   fakebin=$(make_fake_toolchain "$case_dir")
-  add_real_jq "$fakebin"
+  add_real_jq "$fakebin" || { echo "skip: jq not found (required for dispatch profile validation tests)"; return 0; }
 
   out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
     FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
@@ -198,6 +198,10 @@ test_crew_dispatch_active_rules_are_surfaced() {
 
 test_crew_dispatch_validation() {
   local label body expect mode case_dir fakebin out n
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "skip: jq not found (required for dispatch profile validation tests)"
+    return 0
+  fi
   n=0
   while IFS='^' read -r label body mode expect; do
     [ -n "$label" ] || continue

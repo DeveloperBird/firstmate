@@ -13,6 +13,8 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the X mode client)"; exit 0; }
+
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 # The client under test uses the real jq; make it resolvable regardless of where
 # it is installed (Homebrew, Nix profile bins, etc.), which the bare BASE_PATH may

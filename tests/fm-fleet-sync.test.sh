@@ -2,13 +2,17 @@
 # Behavior tests for fm-fleet-sync.sh drift handling.
 #
 # fm-fleet-sync fast-forwards a clone that is cleanly on its default branch. This
-# suite pins the two behavioral additions on top of that:
+# suite pins the behavioral additions on top of that:
 #   - the one safe drift self-heals: a clean, detached HEAD that holds no unique
 #     commits (it is an ancestor of origin/<default>) and whose <default> is free
 #     to check out is re-attached and then fast-forwarded ("recovered:").
-#   - every other off-default state is left untouched and reported as a loud,
-#     quantified "STUCK: ... N commits behind ... - needs attention" warning
-#     instead of a quiet skip.
+#   - a dirty-but-untracked-only tree also self-heals when every untracked path
+#     would be ignored by the incoming .gitignore ("recovered:" as well); any
+#     tracked change, or any untracked path that would stay untracked post-pull,
+#     keeps the STUCK behavior below.
+#   - every other off-default or dirty state is left untouched and reported as a
+#     loud, quantified "STUCK: ... N commits behind ... - needs attention"
+#     warning instead of a quiet skip.
 # The pre-existing fast-forward / already-current / local-only / no-origin paths
 # must be unchanged, and bootstrap must relay the new outcomes as FLEET_SYNC lines.
 set -u
@@ -68,6 +72,18 @@ advance_origin() {
   local home=$1 name=$2 msg=$3 work
   work="$home/work-$name"
   commit_file "$work" file.txt "$msg" "$msg"
+  git -C "$work" push -q origin main
+}
+
+# advance_origin_with_gitignore <home> <name> <msg> <content>: push one more
+# commit to <name>'s origin that adds/replaces .gitignore with <content>, via
+# its work repo.
+advance_origin_with_gitignore() {
+  local home=$1 name=$2 msg=$3 content=$4 work
+  work="$home/work-$name"
+  printf '%s\n' "$content" > "$work/.gitignore"
+  git -C "$work" add .gitignore
+  git -C "$work" commit -qm "$msg"
   git -C "$work" push -q origin main
 }
 
@@ -160,6 +176,60 @@ test_dirty_is_stuck_untouched() {
   [ "$(head_sha "$clone")" = "$before" ] || fail "dirty clone HEAD was moved"
   grep -q "uncommitted edit" "$clone/file.txt" || fail "dirty working-tree change was discarded"
   pass "dirty working tree is reported STUCK and left untouched"
+}
+
+test_untracked_newly_ignored_fast_forwards() {
+  local home clone out
+  home=$(new_home)
+  clone=$(build_pair "$home" theta-ignore)
+  advance_origin_with_gitignore "$home" theta-ignore "gitignore junk.log" "junk.log"
+  printf 'scratch\n' > "$clone/junk.log"
+
+  out=$(run_sync "$home" "$clone")
+
+  assert_contains "$out" "theta-ignore: recovered: 1 untracked path(s) newly ignored by incoming .gitignore, synced" \
+    "untracked path newly ignored by incoming .gitignore fast-forwards"
+  assert_not_contains "$out" "STUCK" "newly-ignored-untracked case is not flagged STUCK"
+  [ "$(head_sha "$clone")" = "$(git -C "$clone" rev-parse origin/main)" ] \
+    || fail "expected fast-forward past the newly-ignored untracked path"
+  [ -f "$clone/junk.log" ] || fail "untracked path was discarded, not left in place"
+  pass "untracked path that becomes ignored by the incoming .gitignore fast-forwards"
+}
+
+test_untracked_still_untracked_is_stuck_untouched() {
+  local home clone out before
+  home=$(new_home)
+  clone=$(build_pair "$home" kappa)
+  advance_origin "$home" kappa C1
+  before=$(head_sha "$clone")
+  printf 'scratch\n' > "$clone/stray.txt"
+
+  out=$(run_sync "$home" "$clone")
+
+  assert_contains "$out" "kappa: STUCK:" "still-untracked path reports STUCK"
+  assert_not_contains "$out" "recovered" "still-untracked path is never recovered"
+  [ "$(head_sha "$clone")" = "$before" ] || fail "still-untracked clone HEAD was moved"
+  [ -f "$clone/stray.txt" ] || fail "untracked path was discarded"
+  pass "untracked path that would stay untracked post-pull is reported STUCK and left untouched"
+}
+
+test_untracked_newly_ignored_plus_tracked_change_is_stuck_untouched() {
+  local home clone out before
+  home=$(new_home)
+  clone=$(build_pair "$home" lambda)
+  advance_origin_with_gitignore "$home" lambda "gitignore leftover.tmp" "leftover.tmp"
+  before=$(head_sha "$clone")
+  printf 'scratch\n' > "$clone/leftover.tmp"
+  printf 'uncommitted edit\n' >> "$clone/file.txt"
+
+  out=$(run_sync "$home" "$clone")
+
+  assert_contains "$out" "lambda: STUCK:" "untracked-plus-tracked-change reports STUCK"
+  assert_not_contains "$out" "recovered" "an unrelated tracked change blocks the untracked-only recovery"
+  [ "$(head_sha "$clone")" = "$before" ] || fail "untracked-plus-tracked-change clone HEAD was moved"
+  grep -q "uncommitted edit" "$clone/file.txt" || fail "tracked working-tree change was discarded"
+  [ -f "$clone/leftover.tmp" ] || fail "untracked path was discarded"
+  pass "untracked path newly ignored plus an unrelated tracked change still reports STUCK"
 }
 
 test_non_default_branch_is_stuck_untouched() {
@@ -296,6 +366,9 @@ test_detached_clean_ancestor_recovers
 test_detached_unique_commit_is_stuck_untouched
 test_detached_clean_ancestor_with_diverged_local_default_is_stuck_untouched
 test_dirty_is_stuck_untouched
+test_untracked_newly_ignored_fast_forwards
+test_untracked_still_untracked_is_stuck_untouched
+test_untracked_newly_ignored_plus_tracked_change_is_stuck_untouched
 test_non_default_branch_is_stuck_untouched
 test_diverged_is_stuck_untouched
 test_on_default_clean_behind_fast_forwards
